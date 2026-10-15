@@ -3,20 +3,20 @@ package com.lukete.ecommerce.infrastructure;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
 @SpringBootTest
 public abstract class PostgresIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
-            .withDatabaseName("ecommerce_test")
-            .withUsername("ecommerce")
-            .withPassword("test_password");
+    static final PostgreSQLContainer POSTGRES =
+            new PostgreSQLContainer("postgres:17-alpine")
+                    .withDatabaseName("ecommerce_test")
+                    .withUsername("ecommerce")
+                    .withPassword("test_password");
+
+    static {
+        POSTGRES.start();
+    }
 
     @DynamicPropertySource
     static void configureDatabase(DynamicPropertyRegistry registry) {

@@ -21,91 +21,116 @@ import com.lukete.ecommerce.domain.Category;
 import com.lukete.ecommerce.dto.CategoryResponse;
 import com.lukete.ecommerce.dto.CreateCategoryRequest;
 import com.lukete.ecommerce.exception.CategoryAlreadyExistsException;
+import com.lukete.ecommerce.mapper.CategoryMapper;
 import com.lukete.ecommerce.repository.CategoryRepository;
 
 @ExtendWith(MockitoExtension.class)
 class CategoryServiceTest {
 
-    @Mock
-    private CategoryRepository categoryRepository;
+        @Mock
+        private CategoryRepository categoryRepository;
 
-    @InjectMocks
-    private CategoryService categoryService;
+        @Mock
+        private CategoryMapper categoryMapper;
 
-    @BeforeEach
-    void setUp() {
-        // O Mockito inicializa os mocks por meio da extensão JUnit.
-    }
+        @InjectMocks
+        private CategoryService categoryService;
 
-    @Test
-    void shouldCreateCategory() {
-        CreateCategoryRequest request = new CreateCategoryRequest(
-                "Periféricos",
-                "Acessórios para computadores");
+        @BeforeEach
+        void setUp() {
+                // O Mockito inicializa os mocks por meio da extensão JUnit.
+        }
 
-        when(categoryRepository.existsByNameIgnoreCase("Periféricos"))
-                .thenReturn(false);
+        @Test
+        void shouldCreateCategory() {
+                CreateCategoryRequest request = new CreateCategoryRequest(
+                                "Periféricos",
+                                "Acessórios para computadores");
 
-        when(categoryRepository.save(any(Category.class)))
-                .thenAnswer(invocation -> {
-                    Category category = invocation.getArgument(0);
-                    category.setId(UUID.randomUUID());
-                    return category;
-                });
+                when(categoryRepository.existsByNameIgnoreCase("Periféricos"))
+                                .thenReturn(false);
 
-        CategoryResponse response = categoryService.create(request);
+                when(categoryRepository.save(any(Category.class)))
+                                .thenAnswer(invocation -> {
+                                        Category category = invocation.getArgument(0);
+                                        category.setId(UUID.randomUUID());
+                                        return category;
+                                });
 
-        assertThat(response.id()).isNotNull();
-        assertThat(response.name()).isEqualTo("Periféricos");
-        assertThat(response.description())
-                .isEqualTo("Acessórios para computadores");
+                when(categoryMapper.toResponse(any(Category.class)))
+                                .thenAnswer(invocation -> {
+                                        Category category = invocation.getArgument(0);
+                                        return new CategoryResponse(
+                                                        category.getId(),
+                                                        category.getName(),
+                                                        category.getDescription());
+                                });
 
-        verify(categoryRepository)
-                .existsByNameIgnoreCase("Periféricos");
-        verify(categoryRepository).save(any(Category.class));
-    }
+                CategoryResponse response = categoryService.create(request);
 
-    @Test
-    void shouldRejectDuplicateCategoryNameIgnoringCase() {
-        CreateCategoryRequest request = new CreateCategoryRequest("PERIFÉRICOS", null);
+                assertThat(response.id()).isNotNull();
+                assertThat(response.name()).isEqualTo("Periféricos");
+                assertThat(response.description())
+                                .isEqualTo("Acessórios para computadores");
 
-        when(categoryRepository.existsByNameIgnoreCase("PERIFÉRICOS"))
-                .thenReturn(true);
+                verify(categoryRepository)
+                                .existsByNameIgnoreCase("Periféricos");
+                verify(categoryRepository).save(any(Category.class));
+        }
 
-        assertThatThrownBy(() -> categoryService.create(request))
-                .isInstanceOf(CategoryAlreadyExistsException.class);
+        @Test
+        void shouldRejectDuplicateCategoryNameIgnoringCase() {
+                CreateCategoryRequest request = new CreateCategoryRequest("PERIFÉRICOS", null);
 
-        verify(categoryRepository, never()).save(any(Category.class));
-    }
+                when(categoryRepository.existsByNameIgnoreCase("PERIFÉRICOS"))
+                                .thenReturn(true);
 
-    @Test
-    void shouldListCategories() {
-        Category first = new Category();
-        first.setId(UUID.randomUUID());
-        first.setName("Periféricos");
-        first.setDescription("Acessórios");
+                assertThatThrownBy(() -> categoryService.create(request))
+                                .isInstanceOf(CategoryAlreadyExistsException.class);
 
-        Category second = new Category();
-        second.setId(UUID.randomUUID());
-        second.setName("Monitores");
-        second.setDescription(null);
+                verify(categoryRepository, never()).save(any(Category.class));
+        }
 
-        when(categoryRepository.findAll())
-                .thenReturn(List.of(first, second));
+        @Test
+        void shouldListCategories() {
+                Category first = new Category();
+                first.setId(UUID.randomUUID());
+                first.setName("Periféricos");
+                first.setDescription("Acessórios");
 
-        List<CategoryResponse> result = categoryService.listCategories();
+                Category second = new Category();
+                second.setId(UUID.randomUUID());
+                second.setName("Monitores");
+                second.setDescription(null);
 
-        assertThat(result)
-                .extracting(CategoryResponse::name)
-                .containsExactly("Periféricos", "Monitores");
+                when(categoryRepository.findAll())
+                                .thenReturn(List.of(first, second));
 
-        assertThat(result.get(1).description()).isNull();
-    }
+                when(categoryMapper.toResponse(first))
+                                .thenReturn(new CategoryResponse(
+                                                first.getId(),
+                                                first.getName(),
+                                                first.getDescription()));
 
-    @Test
-    void shouldReturnEmptyListWhenNoCategoriesExist() {
-        when(categoryRepository.findAll()).thenReturn(List.of());
+                when(categoryMapper.toResponse(second))
+                                .thenReturn(new CategoryResponse(
+                                                second.getId(),
+                                                second.getName(),
+                                                second.getDescription()));
 
-        assertThat(categoryService.listCategories()).isEmpty();
-    }
+                List<CategoryResponse> result = categoryService.listCategories();
+
+                assertThat(result)
+                                .extracting(CategoryResponse::name)
+                                .containsExactly("Periféricos", "Monitores");
+
+                assertThat(result.get(1).description()).isNull();
+        }
+
+        @Test
+        void shouldReturnEmptyListWhenNoCategoriesExist() {
+                when(categoryRepository.findAll()).thenReturn(List.of());
+
+                assertThat(categoryService.listCategories()).isEmpty();
+        }
 }
