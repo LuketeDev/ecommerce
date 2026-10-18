@@ -9,7 +9,7 @@ CREATE TABLE products (
     name VARCHAR(150) NOT NULL,
     description TEXT,
     price NUMERIC(12, 2) NOT NULL,
-    category_id UUID,
+    category_id UUID NOT NULL,
     active BOOLEAN NOT NULL,
     created_at TIMESTAMP
     WITH
