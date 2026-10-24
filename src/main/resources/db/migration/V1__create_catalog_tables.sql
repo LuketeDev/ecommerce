@@ -11,7 +11,7 @@ CREATE TABLE products (
     price NUMERIC(12, 2) NOT NULL,
     category_id UUID NOT NULL,
     active BOOLEAN NOT NULL,
-    stock_quantity INT NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+    stock_quantity INTEGER NOT NULL,
     created_at TIMESTAMP
     WITH
         TIME ZONE NOT NULL,
