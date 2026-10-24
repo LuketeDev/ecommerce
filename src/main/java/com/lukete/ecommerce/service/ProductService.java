@@ -1,12 +1,14 @@
 package com.lukete.ecommerce.service;
 
-import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import com.lukete.ecommerce.domain.Category;
 import com.lukete.ecommerce.domain.Product;
+import com.lukete.ecommerce.domain.ProductSpecification;
 import com.lukete.ecommerce.dto.CreateProductRequest;
 import com.lukete.ecommerce.dto.ProductResponse;
 import com.lukete.ecommerce.dto.UpdateProductRequest;
@@ -38,9 +40,9 @@ public class ProductService {
         return productMapper.toResponse(saved);
     }
 
-    public List<ProductResponse> listProducts() {
-        List<Product> result = productRepository.findAll();
-        return result.stream().map(productMapper::toResponse).toList();
+    public Page<ProductResponse> listProducts(Pageable pageable, ProductSpecification specification) {
+        Page<Product> productsPage = productRepository.findAll(specification, pageable);
+        return productsPage.map(productMapper::toResponse);
     }
 
     public ProductResponse findById(UUID id) {

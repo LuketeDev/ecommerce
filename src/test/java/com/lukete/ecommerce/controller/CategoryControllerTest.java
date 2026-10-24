@@ -1,36 +1,46 @@
 package com.lukete.ecommerce.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.junit.jupiter.api.BeforeEach;
+import java.util.List;
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.lukete.ecommerce.infrastructure.PostgresIntegrationTest;
-import com.lukete.ecommerce.repository.CategoryRepository;
+import com.lukete.ecommerce.dto.CategoryResponse;
+import com.lukete.ecommerce.service.CategoryService;
 
-@AutoConfigureMockMvc
-class CategoryControllerTest extends PostgresIntegrationTest {
+@WebMvcTest(CategoryController.class)
+class CategoryControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private CategoryRepository categoryRepository;
-
-    @BeforeEach
-    void cleanDatabase() {
-        categoryRepository.deleteAll();
-    }
+    @MockitoBean
+    private CategoryService categoryService;
 
     @Test
     void shouldCreateCategory() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        CategoryResponse response = new CategoryResponse(
+                id,
+                "Periféricos",
+                "Acessórios para computadores");
+
+        when(categoryService.create(any()))
+                .thenReturn(response);
+
         String request = """
                 {
                     "name": "Periféricos",
@@ -42,7 +52,7 @@ class CategoryControllerTest extends PostgresIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(request))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.name").value("Periféricos"))
                 .andExpect(jsonPath("$.description")
                         .value("Acessórios para computadores"));
@@ -50,17 +60,13 @@ class CategoryControllerTest extends PostgresIntegrationTest {
 
     @Test
     void shouldListCategories() throws Exception {
-        String request = """
-                {
-                    "name": "Monitores",
-                    "description": "Telas e monitores"
-                }
-                """;
+        CategoryResponse category = new CategoryResponse(
+                UUID.randomUUID(),
+                "Monitores",
+                "Telas e monitores");
 
-        mockMvc.perform(post("/api/v1/categories")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(request))
-                .andExpect(status().isCreated());
+        when(categoryService.listCategories())
+                .thenReturn(List.of(category));
 
         mockMvc.perform(get("/api/v1/categories"))
                 .andExpect(status().isOk())
@@ -111,6 +117,9 @@ class CategoryControllerTest extends PostgresIntegrationTest {
 
     @Test
     void shouldReturnEmptyArrayWhenNoCategoriesExist() throws Exception {
+        when(categoryService.listCategories())
+                .thenReturn(List.of());
+
         mockMvc.perform(get("/api/v1/categories"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
