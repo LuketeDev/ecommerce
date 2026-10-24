@@ -43,6 +43,9 @@ public class Product {
     private boolean active;
 
     @Column(nullable = false)
+    private Integer stockQuantity;
+
+    @Column(nullable = false)
     private Instant createdAt;
 
     @Column(nullable = false)
@@ -52,6 +55,7 @@ public class Product {
     void setDefaults() {
         Instant now = Instant.now();
         active = true;
+        stockQuantity = 0;
         createdAt = now;
         updatedAt = now;
     }

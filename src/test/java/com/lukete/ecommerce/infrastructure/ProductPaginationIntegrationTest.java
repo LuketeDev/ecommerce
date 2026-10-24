@@ -1,5 +1,5 @@
 
-package com.lukete.ecommerce.service;
+package com.lukete.ecommerce.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,6 +27,7 @@ import com.lukete.ecommerce.domain.ProductSpecification;
 import com.lukete.ecommerce.dto.ProductResponse;
 import com.lukete.ecommerce.repository.CategoryRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
+import com.lukete.ecommerce.service.ProductService;
 
 @Testcontainers
 @SpringBootTest

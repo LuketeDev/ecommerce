@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -19,6 +20,8 @@ import com.lukete.ecommerce.domain.ProductSpecification;
 import com.lukete.ecommerce.dto.CreateProductRequest;
 import com.lukete.ecommerce.dto.ProductResponse;
 import com.lukete.ecommerce.dto.UpdateProductRequest;
+import com.lukete.ecommerce.dto.UpdateProductStockRequest;
+import com.lukete.ecommerce.dto.ProductStockResponse;
 import com.lukete.ecommerce.service.ProductService;
 
 import jakarta.validation.Valid;
@@ -53,6 +56,19 @@ public class ProductController {
     @GetMapping("/{id}")
     public ResponseEntity<ProductResponse> getProduct(@PathVariable UUID id) {
         ProductResponse response = productService.findById(id);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/stock")
+    public ResponseEntity<ProductStockResponse> getProductStock(@PathVariable UUID id) {
+        ProductStockResponse response = productService.getProductStock(id);
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/{id}/stock")
+    public ResponseEntity<ProductStockResponse> updateProductStock(@PathVariable UUID id,
+            @Valid @RequestBody UpdateProductStockRequest request) {
+        ProductStockResponse response = productService.updateProductStock(id, request);
         return ResponseEntity.ok(response);
     }
 
