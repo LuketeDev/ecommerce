@@ -4,6 +4,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.lukete.ecommerce.exception.InsufficientProductStockException;
+import com.lukete.ecommerce.exception.InvalidStockQuantityException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -63,5 +66,19 @@ public class Product {
     @PreUpdate
     void setUpdate() {
         updatedAt = Instant.now();
+    }
+
+    public void reduceStock(int quantity) {
+        if (quantity <= 0) {
+            throw new InvalidStockQuantityException(
+                    "Quantity must be positive");
+        }
+
+        if (stockQuantity < quantity) {
+            throw new InsufficientProductStockException(
+                    "Insufficient product stock");
+        }
+
+        stockQuantity -= quantity;
     }
 }

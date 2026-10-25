@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.lukete.ecommerce.domain.Category;
 import com.lukete.ecommerce.domain.Product;
@@ -23,7 +24,6 @@ import com.lukete.ecommerce.mapper.ProductMapper;
 import com.lukete.ecommerce.repository.CategoryRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
 @Service
