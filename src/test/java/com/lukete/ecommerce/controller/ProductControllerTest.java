@@ -27,6 +27,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.lukete.ecommerce.domain.ProductSpecification;
+import com.lukete.ecommerce.exception.ProductNotFoundException;
 import com.lukete.ecommerce.dto.ProductResponse;
 import com.lukete.ecommerce.service.ProductService;
 
@@ -37,6 +38,30 @@ public class ProductControllerTest {
 
         @MockitoBean
         private ProductService productService;
+
+        @Test
+        void shouldReturnBadRequestWhenProductIdIsNotAUuid() throws Exception {
+                mockMvc.perform(get("/api/v1/products/not-a-uuid"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.error").value("INVALID_PARAMETER"))
+                                .andExpect(jsonPath("$.message").value(
+                                                "Parameter 'id' has an invalid value."))
+                                .andExpect(jsonPath("$.timestamp").exists());
+        }
+
+        @Test
+        void shouldReturnNotFoundWithStandardErrorBodyWhenProductDoesNotExist() throws Exception {
+                UUID id = UUID.randomUUID();
+                when(productService.findById(id))
+                                .thenThrow(new ProductNotFoundException(
+                                                "Product not found with id " + id));
+
+                mockMvc.perform(get("/api/v1/products/{id}", id))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.error").value("PRODUCT_NOT_FOUND"))
+                                .andExpect(jsonPath("$.message").value("Product not found with id " + id))
+                                .andExpect(jsonPath("$.timestamp").exists());
+        }
 
         @Test
         void shouldReturnFirstPageOfProducts() throws Exception {
