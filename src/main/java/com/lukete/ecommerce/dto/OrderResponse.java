@@ -9,10 +9,18 @@ import com.lukete.ecommerce.enums.OrderStatus;
 
 public record OrderResponse(
 
-                UUID id,
-                OrderStatus status,
-                List<OrderItemResponse> items,
-                BigDecimal totalAmount,
-                Instant createdAt) {
+        UUID id,
+        OrderStatus status,
+        List<OrderItemResponse> items,
+        BigDecimal totalAmount,
+        Instant createdAt) {
 
+    public OrderResponse {
+        items = items != null ? List.copyOf(items) : List.of();
+    }
+
+    public List<OrderItemResponse> items() {
+        // Retorna uma cópia imutável que protege a representação interna
+        return items != null ? List.copyOf(items) : List.of();
+    }
 }

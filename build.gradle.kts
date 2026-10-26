@@ -2,6 +2,9 @@ plugins {
 	java
 	id("org.springframework.boot") version "4.1.1"
 	id("io.spring.dependency-management") version "1.1.7"
+	id("jacoco")
+    id("com.github.spotbugs") version "6.5.12"
+	id("org.owasp.dependencycheck") version "13.0.0"
 }
 
 group = "com.lukete"
@@ -42,6 +45,33 @@ dependencies {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+}
+
+tasks.test {
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+dependencyCheck {
+    nvd {
+        apiKey = System.getenv("NVD_API_KEY")
+    }
+}
+
+tasks.named<com.github.spotbugs.snom.SpotBugsTask>("spotbugsMain") {
+    reports {
+        create("html") {
+            required = true
+        }
+    }
 }
 
 tasks.withType<JavaCompile> {
