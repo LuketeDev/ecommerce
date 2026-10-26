@@ -19,12 +19,12 @@ import com.lukete.ecommerce.dto.CreateOrderItemRequest;
 import com.lukete.ecommerce.dto.CreateOrderRequest;
 import com.lukete.ecommerce.dto.OrderItemResponse;
 import com.lukete.ecommerce.dto.OrderResponse;
-import com.lukete.ecommerce.dto.UpdateProductStockRequest;
-import com.lukete.ecommerce.enums.OperationType;
 import com.lukete.ecommerce.enums.OrderStatus;
 import com.lukete.ecommerce.exception.DuplicateOrderItemException;
 import com.lukete.ecommerce.exception.InactiveProductException;
 import com.lukete.ecommerce.exception.InsufficientProductStockException;
+import com.lukete.ecommerce.exception.InvalidOrderStatusException;
+import com.lukete.ecommerce.exception.OrderNotFoundException;
 import com.lukete.ecommerce.exception.ProductNotFoundException;
 import com.lukete.ecommerce.repository.OrderRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
@@ -103,10 +103,69 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        return new OrderResponse(
-                savedOrder.getId(),
-                savedOrder.getStatus(),
-                savedOrder.getItems().stream()
+        return createResponse(savedOrder);
+    }
+
+    @Transactional
+    public OrderResponse confirmOrder(UUID orderId) {
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new InvalidOrderStatusException("Order is not pending with id: " + orderId);
+        }
+
+        order.setStatus(OrderStatus.CONFIRMED);
+
+        return createResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(UUID orderId) {
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(
+                        "Order not found with id: " + orderId));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new InvalidOrderStatusException(
+                    "Order is not pending with id: " + orderId);
+        }
+
+        Map<UUID, Product> products = new HashMap<>();
+
+        // Collect product IDs from order items
+        Set<UUID> productIds = order.getItems().stream()
+                .map(item -> item.getProduct().getId())
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Acquire locks in a deterministic order
+        List<UUID> sortedProductIds = productIds.stream()
+                .sorted(Comparator.naturalOrder())
+                .toList();
+
+        for (UUID productId : sortedProductIds) {
+            Product product = productRepository.findByIdWithLock(productId)
+                    .orElseThrow(() -> new ProductNotFoundException(
+                            "Product not found with id: " + productId));
+
+            products.put(productId, product);
+        }
+
+        // Restore the quantity reserved by each order item
+        for (OrderItem item : order.getItems()) {
+            Product product = products.get(item.getProduct().getId());
+            product.restoreStock(item.getQuantity());
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+
+        return createResponse(order);
+    }
+
+    private OrderResponse createResponse(Order order) {
+        return new OrderResponse(order.getId(),
+                order.getStatus(),
+                order.getItems().stream()
                         .map(item -> new OrderItemResponse(
                                 item.getProduct().getId(),
                                 item.getProduct().getName(),
@@ -114,7 +173,7 @@ public class OrderService {
                                 item.getUnitPrice(),
                                 item.getSubtotal()))
                         .toList(),
-                savedOrder.getTotalAmount(),
-                savedOrder.getCreatedAt());
+                order.getTotalAmount(),
+                order.getCreatedAt());
     }
 }

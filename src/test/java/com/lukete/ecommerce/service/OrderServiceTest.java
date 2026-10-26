@@ -1,181 +1,203 @@
+
 package com.lukete.ecommerce.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.lukete.ecommerce.domain.Product;
-import com.lukete.ecommerce.dto.CreateOrderItemRequest;
-import com.lukete.ecommerce.dto.CreateOrderRequest;
-import com.lukete.ecommerce.dto.OrderResponse;
 import com.lukete.ecommerce.domain.Order;
+import com.lukete.ecommerce.domain.OrderItem;
+import com.lukete.ecommerce.domain.Product;
 import com.lukete.ecommerce.enums.OrderStatus;
-import com.lukete.ecommerce.exception.DuplicateOrderItemException;
-import com.lukete.ecommerce.exception.InactiveProductException;
-import com.lukete.ecommerce.exception.InsufficientProductStockException;
-import com.lukete.ecommerce.exception.ProductNotFoundException;
+import com.lukete.ecommerce.exception.InvalidOrderStatusException;
+import com.lukete.ecommerce.exception.OrderNotFoundException;
 import com.lukete.ecommerce.repository.OrderRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
-    @Mock
-    private OrderRepository orderRepository;
+        @Mock
+        private OrderRepository orderRepository;
 
-    @Mock
-    private ProductRepository productRepository;
+        @Mock
+        private ProductRepository productRepository;
 
-    @InjectMocks
-    private OrderService orderService;
+        @InjectMocks
+        private OrderService orderService;
 
-    private Product keyboard;
-    private Product mouse;
+        private Order order;
+        private Product product;
+        private OrderItem orderItem;
 
-    @BeforeEach
-    void setUp() {
-        keyboard = createProduct(UUID.randomUUID(), "Teclado", new BigDecimal("199.90"), 10);
-        mouse = createProduct(UUID.randomUUID(), "Mouse", new BigDecimal("79.90"), 5);
-    }
+        @BeforeEach
+        void setUp() {
+                UUID productId = UUID.randomUUID();
 
-    @Test
-    void shouldCreateOrderAndReserveStock() {
-        CreateOrderRequest request = new CreateOrderRequest(List.of(
-                new CreateOrderItemRequest(keyboard.getId(), 2),
-                new CreateOrderItemRequest(mouse.getId(), 1)));
+                product = new Product();
+                product.setId(productId);
+                product.setName("Teclado");
+                product.setPrice(new BigDecimal("199.90"));
+                product.setActive(true);
+                product.setStockQuantity(7);
 
-        when(productRepository.findByIdWithLock(keyboard.getId())).thenReturn(Optional.of(keyboard));
-        when(productRepository.findByIdWithLock(mouse.getId())).thenReturn(Optional.of(mouse));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
-            Order order = invocation.getArgument(0);
-            order.setId(UUID.randomUUID());
-            order.setCreatedAt(Instant.now());
-            return order;
-        });
+                order = new Order();
+                order.setId(UUID.randomUUID());
+                order.setStatus(OrderStatus.PENDING);
+                order.setTotalAmount(new BigDecimal("399.80"));
+                order.setCreatedAt(Instant.now());
+                order.setUpdatedAt(Instant.now());
+                order.setItems(new ArrayList<>());
 
-        OrderResponse response = orderService.createOrder(request);
+                orderItem = new OrderItem();
+                orderItem.setId(UUID.randomUUID());
+                orderItem.setOrder(order);
+                orderItem.setProduct(product);
+                orderItem.setQuantity(2);
+                orderItem.setUnitPrice(new BigDecimal("199.90"));
 
-        assertThat(response.id()).isNotNull();
-        assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
-        assertThat(response.totalAmount()).isEqualByComparingTo("479.70");
-        assertThat(response.createdAt()).isNotNull();
-        assertThat(response.items()).hasSize(2);
-        assertThat(response.items())
-                .extracting(item -> item.productId())
-                .containsExactly(keyboard.getId(), mouse.getId());
-        assertThat(response.items())
-                .extracting(item -> item.subtotal())
-                .containsExactly(new BigDecimal("399.80"), new BigDecimal("79.90"));
-        assertThat(response.items())
-                .extracting(item -> item.unitPrice())
-                .containsExactly(new BigDecimal("199.90"), new BigDecimal("79.90"));
+                order.getItems().add(orderItem);
+        }
 
-        assertThat(keyboard.getStockQuantity()).isEqualTo(8);
-        assertThat(mouse.getStockQuantity()).isEqualTo(4);
+        @Test
+        void shouldConfirmPendingOrder() {
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
 
-        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-        verify(orderRepository).save(orderCaptor.capture());
-        Order savedOrder = orderCaptor.getValue();
-        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
-        assertThat(savedOrder.getTotalAmount()).isEqualByComparingTo("479.70");
-        assertThat(savedOrder.getItems()).hasSize(2);
-        assertThat(savedOrder.getItems()).allSatisfy(item -> assertThat(item.getOrder()).isSameAs(savedOrder));
-    }
+                var response = orderService.confirmOrder(order.getId());
 
-    @Test
-    void shouldThrowWhenProductDoesNotExist() {
-        UUID productId = UUID.randomUUID();
-        CreateOrderRequest request = new CreateOrderRequest(
-                List.of(new CreateOrderItemRequest(productId, 1)));
+                assertThat(response.id()).isEqualTo(order.getId());
+                assertThat(response.status()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
 
-        when(productRepository.findByIdWithLock(productId)).thenReturn(Optional.empty());
+                // The stock was already reserved during order creation.
+                assertThat(product.getStockQuantity()).isEqualTo(7);
 
-        assertThatThrownBy(() -> orderService.createOrder(request))
-                .isInstanceOf(ProductNotFoundException.class);
+                verify(orderRepository).findByIdWithLock(order.getId());
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
 
-        verify(orderRepository, never()).save(any(Order.class));
-    }
+        @Test
+        void shouldThrowWhenConfirmingNonexistentOrder() {
+                UUID orderId = UUID.randomUUID();
 
-    @Test
-    void shouldRejectOrderContainingInactiveProduct() {
-        keyboard.setActive(false);
-        CreateOrderRequest request = new CreateOrderRequest(
-                List.of(new CreateOrderItemRequest(keyboard.getId(), 1)));
-        when(productRepository.findByIdWithLock(keyboard.getId())).thenReturn(Optional.of(keyboard));
+                when(orderRepository.findByIdWithLock(orderId))
+                                .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.createOrder(request))
-                .isInstanceOf(InactiveProductException.class);
+                assertThatThrownBy(() -> orderService.confirmOrder(orderId))
+                                .isInstanceOf(OrderNotFoundException.class);
 
-        assertThat(keyboard.getStockQuantity()).isEqualTo(10);
-        verify(orderRepository, never()).save(any(Order.class));
-    }
+                verify(orderRepository).findByIdWithLock(orderId);
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
 
-    @Test
-    void shouldRejectOrderWhenStockIsInsufficient() {
-        CreateOrderRequest request = new CreateOrderRequest(
-                List.of(new CreateOrderItemRequest(keyboard.getId(), 11)));
-        when(productRepository.findByIdWithLock(keyboard.getId())).thenReturn(Optional.of(keyboard));
+        @Test
+        void shouldRejectConfirmingNonPendingOrder() {
+                order.setStatus(OrderStatus.CONFIRMED);
 
-        assertThatThrownBy(() -> orderService.createOrder(request))
-                .isInstanceOf(InsufficientProductStockException.class);
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
 
-        assertThat(keyboard.getStockQuantity()).isEqualTo(10);
-        verify(orderRepository, never()).save(any(Order.class));
-    }
+                assertThatThrownBy(() -> orderService.confirmOrder(order.getId()))
+                                .isInstanceOf(InvalidOrderStatusException.class);
 
-    @Test
-    void shouldValidateAllStockBeforeReservingAnyProduct() {
-        CreateOrderRequest request = new CreateOrderRequest(List.of(
-                new CreateOrderItemRequest(keyboard.getId(), 2),
-                new CreateOrderItemRequest(mouse.getId(), 6)));
-        when(productRepository.findByIdWithLock(keyboard.getId())).thenReturn(Optional.of(keyboard));
-        when(productRepository.findByIdWithLock(mouse.getId())).thenReturn(Optional.of(mouse));
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(product.getStockQuantity()).isEqualTo(7);
 
-        assertThatThrownBy(() -> orderService.createOrder(request))
-                .isInstanceOf(InsufficientProductStockException.class);
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
 
-        assertThat(keyboard.getStockQuantity()).isEqualTo(10);
-        assertThat(mouse.getStockQuantity()).isEqualTo(5);
-        verify(orderRepository, never()).save(any(Order.class));
-    }
+        @Test
+        void shouldCancelPendingOrderAndRestoreStock() {
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
+                when(productRepository.findByIdWithLock(product.getId()))
+                                .thenReturn(Optional.of(product));
 
-    @Test
-    void shouldRejectDuplicateProductItems() {
-        CreateOrderRequest request = new CreateOrderRequest(List.of(
-                new CreateOrderItemRequest(keyboard.getId(), 1),
-                new CreateOrderItemRequest(keyboard.getId(), 2)));
+                var response = orderService.cancelOrder(order.getId());
 
-        assertThatThrownBy(() -> orderService.createOrder(request))
-                .isInstanceOf(DuplicateOrderItemException.class);
+                assertThat(response.id()).isEqualTo(order.getId());
+                assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+                assertThat(product.getStockQuantity()).isEqualTo(9);
 
-        verify(productRepository, never()).findByIdWithLock(any());
-        verify(orderRepository, never()).save(any(Order.class));
-    }
+                verify(orderRepository).findByIdWithLock(order.getId());
+                verify(productRepository).findByIdWithLock(product.getId());
+        }
 
-    private Product createProduct(UUID id, String name, BigDecimal price, int stock) {
-        Product product = new Product();
-        product.setId(id);
-        product.setName(name);
-        product.setPrice(price);
-        product.setActive(true);
-        product.setStockQuantity(stock);
-        return product;
-    }
+        @Test
+        void shouldThrowWhenCancellingNonexistentOrder() {
+                UUID orderId = UUID.randomUUID();
+
+                when(orderRepository.findByIdWithLock(orderId))
+                                .thenReturn(Optional.empty());
+
+                assertThatThrownBy(() -> orderService.cancelOrder(orderId))
+                                .isInstanceOf(OrderNotFoundException.class);
+
+                verify(orderRepository).findByIdWithLock(orderId);
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
+
+        @Test
+        void shouldRejectCancellingNonPendingOrder() {
+                order.setStatus(OrderStatus.CONFIRMED);
+
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
+
+                assertThatThrownBy(() -> orderService.cancelOrder(order.getId()))
+                                .isInstanceOf(InvalidOrderStatusException.class);
+
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(product.getStockQuantity()).isEqualTo(7);
+
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
+
+        @Test
+        void shouldRejectCancellingAlreadyCancelledOrder() {
+                order.setStatus(OrderStatus.CANCELLED);
+
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
+
+                assertThatThrownBy(() -> orderService.cancelOrder(order.getId()))
+                                .isInstanceOf(InvalidOrderStatusException.class);
+
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+                assertThat(product.getStockQuantity()).isEqualTo(7);
+
+                verify(productRepository, never()).findByIdWithLock(product.getId());
+        }
+
+        @Test
+        void shouldThrowWhenProductOfOrderNoLongerExists() {
+                when(orderRepository.findByIdWithLock(order.getId()))
+                                .thenReturn(Optional.of(order));
+                when(productRepository.findByIdWithLock(product.getId()))
+                                .thenReturn(Optional.empty());
+
+                assertThatThrownBy(() -> orderService.cancelOrder(order.getId()))
+                                .isInstanceOf(
+                                                com.lukete.ecommerce.exception.ProductNotFoundException.class);
+
+                assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(product.getStockQuantity()).isEqualTo(7);
+        }
 }
