@@ -2,7 +2,7 @@
 
 API REST para gerenciamento de um catálogo de produtos e processamento de pedidos, desenvolvida com Java e Spring Boot.
 
-O projeto foi desenvolvido como parte do meu portfólio, com foco em boas práticas de desenvolvimento backend, modelagem de domínio, validação de dados, testes automatizados, documentação de API, migração de banco de dados e containerização.
+O projeto foi desenvolvido como parte do meu portfólio, com foco em boas práticas de desenvolvimento backend, modelagem de domínio, validação de dados, testes automatizados, documentação de API, migração de banco de dados, controle transacional e containerização.
 
 ## Tecnologias
 
@@ -16,8 +16,13 @@ O projeto foi desenvolvido como parte do meu portfólio, com foco em boas práti
 - JUnit 5
 - Mockito
 - Testcontainers
+- JaCoCo
+- SpotBugs
+- OWASP Dependency-Check
 - Gradle
+- Docker
 - Docker Compose
+- GitHub Actions
 
 ## Funcionalidades
 
@@ -82,7 +87,9 @@ A listagem de produtos permite utilizar os seguintes parâmetros de consulta:
 
 Exemplo:
 
-`GET /api/v1/products?page=0&size=10&sort=price,asc&active=true`
+```http
+GET /api/v1/products?page=0&size=10&sort=price,asc&active=true
+```
 
 ### Pedidos
 
@@ -111,49 +118,83 @@ cd ecommerce
 
 ### Configuração do ambiente
 
-Crie o arquivo `.env` a partir do exemplo disponibilizado:
+Crie o arquivo `.env` a partir do exemplo:
 
 ```bash
 cp .env.example .env
 ```
 
-Configure as variáveis de ambiente no arquivo `.env`
+Configure as variáveis necessárias no arquivo `.env`, de acordo com o `compose.yaml`.
 
-Utilize uma senha adequada para o seu ambiente. O arquivo `.env` não deve ser versionado.
+Utilize credenciais apropriadas para o ambiente local. O arquivo `.env` não deve ser versionado.
 
-### Iniciando o banco de dados
+### Executando com Docker Compose
 
-Suba o PostgreSQL utilizando o Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-Aguarde o banco de dados ficar disponível.
-
-### Executando a aplicação
-
-No Linux ou macOS:
+Para construir a imagem da API e iniciar a aplicação e o PostgreSQL:
 
 ```bash
-./gradlew bootRun
+docker compose up --build -d
 ```
 
-No Windows:
+Confira o estado dos serviços:
 
-```bat
-gradlew.bat bootRun
+```bash
+docker compose ps
 ```
+
+Consulte os logs da aplicação:
+
+```bash
+docker compose logs -f api
+```
+
+Para consultar os logs do banco de dados:
+
+```bash
+docker compose logs -f postgres
+```
+
+O serviço da API deve aguardar a disponibilidade do PostgreSQL. As migrações do banco são executadas automaticamente pelo Flyway durante a inicialização da aplicação.
 
 A API estará disponível em:
 
 `http://localhost:8080`
 
-As migrações do banco de dados são executadas automaticamente pelo Flyway durante a inicialização da aplicação.
+Para interromper os serviços:
+
+```bash
+docker compose down
+```
+
+Os dados do PostgreSQL são armazenados em um volume Docker nomeado. Não utilize `docker compose down -v` se quiser preservar os dados locais.
+
+### Executando sem Docker para a aplicação
+
+Se preferir executar a aplicação diretamente na máquina, primeiro inicie o PostgreSQL pelo Docker Compose:
+
+```bash
+docker compose up -d postgres
+```
+
+Depois, execute a aplicação.
+
+Linux ou macOS:
+
+```bash
+./gradlew bootRun
+```
+
+Windows:
+
+```bat
+gradlew.bat bootRun
+```
+
+Nesse modo, as variáveis de ambiente necessárias à conexão devem estar disponíveis para o processo Java. Confira a configuração de datasource em `application.yaml`.
 
 ## Documentação
 
-A documentação interativa da API está disponível através do Swagger UI:
+A documentação interativa da API está disponível pelo Swagger UI:
 
 `http://localhost:8080/swagger-ui.html`
 
@@ -173,15 +214,111 @@ Os testes abrangem diferentes camadas da aplicação, incluindo controllers, ser
 
 Os testes de integração que utilizam Testcontainers precisam de um ambiente Docker disponível.
 
-Para gerar o relatório de testes, execute o comando acima e consulte os resultados em:
+O relatório de execução dos testes fica em:
 
 `build/reports/tests/test/index.html`
+
+### Cobertura de testes
+
+Para gerar o relatório JaCoCo:
+
+```bash
+./gradlew jacocoTestReport
+```
+
+Relatórios:
+
+- HTML: `build/reports/jacoco/test/html/index.html`
+- XML: `build/reports/jacoco/test/jacocoTestReport.xml`
+
+### Análise estática
+
+Para executar o SpotBugs:
+
+```bash
+./gradlew spotbugsMain
+```
+
+O relatório HTML é gerado em `build/reports/spotbugs/main.html`, conforme a configuração do Gradle.
+
+### Análise de vulnerabilidades
+
+O OWASP Dependency-Check analisa as dependências do projeto em busca de vulnerabilidades conhecidas:
+
+```bash
+./gradlew dependencyCheckAnalyze
+```
+
+O comando utiliza os dados de vulnerabilidades do NVD. Para evitar limitações de acesso, configure `NVD_API_KEY` no ambiente local ou como um secret do GitHub Actions.
+
+### Build
+
+Para compilar e gerar o artefato executável:
+
+```bash
+./gradlew bootJar
+```
+
+## Integração contínua
+
+O projeto utiliza GitHub Actions para executar verificações automatizadas em pushes e pull requests.
+
+O pipeline inclui:
+
+- Execução dos testes
+- Geração do relatório de cobertura
+- Análise estática com SpotBugs
+- Análise de dependências com OWASP Dependency-Check
+- Geração do artefato executável
+
+A chave de acesso ao NVD deve ser configurada em `Settings → Secrets and variables → Actions` no repositório, utilizando o nome `NVD_API_KEY`.
 
 ## Banco de dados
 
 O PostgreSQL é utilizado para persistência dos dados. O Flyway gerencia as migrações versionadas, enquanto o Hibernate valida o esquema do banco durante a inicialização da aplicação.
 
 O projeto utiliza `ddl-auto: validate`, evitando que o Hibernate altere automaticamente a estrutura do banco de dados.
+
+As alterações estruturais devem ser implementadas por novas migrações Flyway, preservando o histórico de mudanças no esquema.
+
+## Estrutura do projeto
+
+A aplicação é organizada em camadas para separar responsabilidades. A estrutura exata pode variar conforme a implementação:
+
+```text
+src/
+├── main/
+│   ├── java/
+│   │   └── com/lukete/ecommerce/
+│   │       ├── controller/
+│   │       ├── service/
+│   │       ├── repository/
+│   │       ├── domain/
+│   │       ├── dto/
+│   │       ├── exception/
+│   │       └── ...
+│   └── resources/
+│       ├── db/migration/
+│       └── application.yaml
+└── test/
+    └── java/
+```
+
+## Escopo e limitações
+
+O projeto concentra-se no catálogo, no estoque e no processamento de pedidos.
+
+Não fazem parte do escopo atual, salvo se implementados posteriormente:
+
+- Integração com gateways de pagamento
+- Processamento real de pagamentos
+- Cálculo de frete
+- Cupons e descontos promocionais
+- Frontend
+- Autenticação e autorização de clientes
+- Integração com serviços externos de logística
+
+A API é um projeto de portfólio e não deve ser considerada pronta para operação comercial sem uma revisão adicional de segurança, observabilidade, desempenho e requisitos operacionais.
 
 ## Objetivos de aprendizado
 
@@ -194,4 +331,6 @@ O projeto utiliza `ddl-auto: validate`, evitando que o Hibernate altere automati
 - Documentação de APIs com OpenAPI
 - Gerenciamento de migrações com Flyway
 - Execução de infraestrutura com Docker Compose
+- Análise estática e de vulnerabilidades
+- Automação de verificações com GitHub Actions
 - Organização de um projeto backend para portfólio profissional
