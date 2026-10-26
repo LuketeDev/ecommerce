@@ -3,6 +3,7 @@ package com.lukete.ecommerce.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -19,6 +20,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -31,10 +33,16 @@ import org.springframework.data.domain.Pageable;
 import com.lukete.ecommerce.domain.Order;
 import com.lukete.ecommerce.domain.OrderItem;
 import com.lukete.ecommerce.domain.Product;
+import com.lukete.ecommerce.dto.CreateOrderItemRequest;
+import com.lukete.ecommerce.dto.CreateOrderRequest;
 import com.lukete.ecommerce.dto.OrderResponse;
 import com.lukete.ecommerce.enums.OrderStatus;
+import com.lukete.ecommerce.exception.DuplicateOrderItemException;
+import com.lukete.ecommerce.exception.InactiveProductException;
+import com.lukete.ecommerce.exception.InsufficientProductStockException;
 import com.lukete.ecommerce.exception.InvalidOrderStatusException;
 import com.lukete.ecommerce.exception.OrderNotFoundException;
+import com.lukete.ecommerce.exception.ProductNotFoundException;
 import com.lukete.ecommerce.mapper.OrderMapper;
 import com.lukete.ecommerce.repository.OrderRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
@@ -57,6 +65,9 @@ class OrderServiceTest {
         private Order order;
         private Product product;
         private OrderItem orderItem;
+
+        private Product keyboard;
+        private Product mouse;
 
         @BeforeEach
         void setUp() {
@@ -85,6 +96,20 @@ class OrderServiceTest {
                 orderItem.setUnitPrice(new BigDecimal("199.90"));
 
                 order.getItems().add(orderItem);
+
+                keyboard = new Product();
+                keyboard.setId(UUID.randomUUID());
+                keyboard.setName("Teclado");
+                keyboard.setPrice(new BigDecimal("100.00"));
+                keyboard.setActive(true);
+                keyboard.setStockQuantity(10);
+
+                mouse = new Product();
+                mouse.setId(UUID.randomUUID());
+                mouse.setName("Mouse");
+                mouse.setPrice(new BigDecimal("49.90"));
+                mouse.setActive(true);
+                mouse.setStockQuantity(5);
         }
 
         @Test
@@ -92,7 +117,7 @@ class OrderServiceTest {
                 when(orderRepository.findByIdWithLock(order.getId()))
                                 .thenReturn(Optional.of(order));
 
-                var response = orderService.confirmOrder(order.getId()); // NPE
+                var response = orderService.confirmOrder(order.getId());
 
                 assertThat(response.id()).isEqualTo(order.getId());
                 assertThat(response.status()).isEqualTo(OrderStatus.CONFIRMED);
@@ -142,7 +167,7 @@ class OrderServiceTest {
                 when(productRepository.findByIdWithLock(product.getId()))
                                 .thenReturn(Optional.of(product));
 
-                var response = orderService.cancelOrder(order.getId()); // NPE
+                var response = orderService.cancelOrder(order.getId());
 
                 assertThat(response.id()).isEqualTo(order.getId());
                 assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
@@ -232,7 +257,7 @@ class OrderServiceTest {
                 assertThat(actual).isSameAs(expected);
 
                 verify(orderRepository).findById(order.getId());
-                verify(orderMapper).toResponse(order); // TooManyActualInvocations
+                verify(orderMapper).toResponse(order);
         }
 
         @Test
@@ -294,7 +319,137 @@ class OrderServiceTest {
 
                 verify(orderRepository).findAll(pageable);
                 verify(orderMapper, times(2))
-                                .toResponse(org.mockito.ArgumentMatchers.any(Order.class)); // TooManyActualInvocations
+                                .toResponse(org.mockito.ArgumentMatchers.any(Order.class));
+        }
+
+        @Test
+        void shouldCreateOrderAndCalculateTotalUsingProductPrices() {
+                when(productRepository.findByIdWithLock(keyboard.getId()))
+                                .thenReturn(Optional.of(keyboard));
+
+                when(productRepository.findByIdWithLock(mouse.getId()))
+                                .thenReturn(Optional.of(mouse));
+
+                when(orderRepository.save(any(Order.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                CreateOrderRequest request = new CreateOrderRequest(List.of(
+                                new CreateOrderItemRequest(keyboard.getId(), 2),
+                                new CreateOrderItemRequest(mouse.getId(), 1)));
+
+                OrderResponse response = orderService.createOrder(request);
+
+                ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+
+                verify(orderRepository).save(orderCaptor.capture());
+
+                Order savedOrder = orderCaptor.getValue();
+
+                assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(savedOrder.getItems()).hasSize(2);
+                assertThat(savedOrder.getTotalAmount())
+                                .isEqualByComparingTo("249.90");
+
+                assertThat(savedOrder.getItems())
+                                .anySatisfy(item -> {
+                                        assertThat(item.getProduct()).isEqualTo(keyboard);
+                                        assertThat(item.getQuantity()).isEqualTo(2);
+                                        assertThat(item.getUnitPrice())
+                                                        .isEqualByComparingTo("100.00");
+                                        assertThat(item.getSubtotal())
+                                                        .isEqualByComparingTo("200.00");
+                                })
+                                .anySatisfy(item -> {
+                                        assertThat(item.getProduct()).isEqualTo(mouse);
+                                        assertThat(item.getQuantity()).isEqualTo(1);
+                                        assertThat(item.getUnitPrice())
+                                                        .isEqualByComparingTo("49.90");
+                                        assertThat(item.getSubtotal())
+                                                        .isEqualByComparingTo("49.90");
+                                });
+
+                assertThat(keyboard.getStockQuantity()).isEqualTo(8);
+                assertThat(mouse.getStockQuantity()).isEqualTo(4);
+
+                assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
+                assertThat(response.totalAmount())
+                                .isEqualByComparingTo("249.90");
+                assertThat(response.items()).hasSize(2);
+
+                verify(orderMapper).toResponse(savedOrder);
+        }
+
+        @Test
+        void shouldRejectDuplicateProductsInOrder() {
+                CreateOrderRequest request = new CreateOrderRequest(List.of(
+                                new CreateOrderItemRequest(keyboard.getId(), 1),
+                                new CreateOrderItemRequest(keyboard.getId(), 2)));
+
+                assertThatThrownBy(() -> orderService.createOrder(request))
+                                .isInstanceOf(DuplicateOrderItemException.class);
+
+                verify(productRepository, never()).findByIdWithLock(any());
+                verify(orderRepository, never()).save(any(Order.class));
+
+                assertThat(keyboard.getStockQuantity()).isEqualTo(10);
+        }
+
+        @Test
+        void shouldRejectOrderWhenProductDoesNotExist() {
+                UUID nonexistentProductId = UUID.randomUUID();
+
+                when(productRepository.findByIdWithLock(nonexistentProductId))
+                                .thenReturn(Optional.empty());
+
+                CreateOrderRequest request = new CreateOrderRequest(List.of(
+                                new CreateOrderItemRequest(nonexistentProductId, 1)));
+
+                assertThatThrownBy(() -> orderService.createOrder(request))
+                                .isInstanceOf(ProductNotFoundException.class);
+
+                verify(orderRepository, never()).save(any(Order.class));
+                verify(orderMapper, never()).toResponse(any(Order.class));
+        }
+
+        @Test
+        void shouldRejectInactiveProductWithoutChangingStock() {
+                keyboard.setActive(false);
+
+                when(productRepository.findByIdWithLock(keyboard.getId()))
+                                .thenReturn(Optional.of(keyboard));
+
+                CreateOrderRequest request = new CreateOrderRequest(List.of(
+                                new CreateOrderItemRequest(keyboard.getId(), 2)));
+
+                assertThatThrownBy(() -> orderService.createOrder(request))
+                                .isInstanceOf(InactiveProductException.class);
+
+                assertThat(keyboard.getStockQuantity()).isEqualTo(10);
+
+                verify(orderRepository, never()).save(any(Order.class));
+                verify(orderMapper, never()).toResponse(any(Order.class));
+        }
+
+        @Test
+        void shouldRejectInsufficientStockWithoutPartiallyReducingStock() {
+                when(productRepository.findByIdWithLock(keyboard.getId()))
+                                .thenReturn(Optional.of(keyboard));
+
+                when(productRepository.findByIdWithLock(mouse.getId()))
+                                .thenReturn(Optional.of(mouse));
+
+                CreateOrderRequest request = new CreateOrderRequest(List.of(
+                                new CreateOrderItemRequest(keyboard.getId(), 2),
+                                new CreateOrderItemRequest(mouse.getId(), 6)));
+
+                assertThatThrownBy(() -> orderService.createOrder(request))
+                                .isInstanceOf(InsufficientProductStockException.class);
+
+                assertThat(keyboard.getStockQuantity()).isEqualTo(10);
+                assertThat(mouse.getStockQuantity()).isEqualTo(5);
+
+                verify(orderRepository, never()).save(any(Order.class));
+                verify(orderMapper, never()).toResponse(any(Order.class));
         }
 
 }
