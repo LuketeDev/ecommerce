@@ -3,13 +3,16 @@ package com.lukete.ecommerce.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,19 +21,29 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.lukete.ecommerce.domain.Order;
 import com.lukete.ecommerce.domain.OrderItem;
 import com.lukete.ecommerce.domain.Product;
+import com.lukete.ecommerce.dto.OrderResponse;
 import com.lukete.ecommerce.enums.OrderStatus;
 import com.lukete.ecommerce.exception.InvalidOrderStatusException;
 import com.lukete.ecommerce.exception.OrderNotFoundException;
+import com.lukete.ecommerce.mapper.OrderMapper;
 import com.lukete.ecommerce.repository.OrderRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
+
+        @Spy
+        private OrderMapper orderMapper = new OrderMapper();
 
         @Mock
         private OrderRepository orderRepository;
@@ -79,7 +92,7 @@ class OrderServiceTest {
                 when(orderRepository.findByIdWithLock(order.getId()))
                                 .thenReturn(Optional.of(order));
 
-                var response = orderService.confirmOrder(order.getId());
+                var response = orderService.confirmOrder(order.getId()); // NPE
 
                 assertThat(response.id()).isEqualTo(order.getId());
                 assertThat(response.status()).isEqualTo(OrderStatus.CONFIRMED);
@@ -129,7 +142,7 @@ class OrderServiceTest {
                 when(productRepository.findByIdWithLock(product.getId()))
                                 .thenReturn(Optional.of(product));
 
-                var response = orderService.cancelOrder(order.getId());
+                var response = orderService.cancelOrder(order.getId()); // NPE
 
                 assertThat(response.id()).isEqualTo(order.getId());
                 assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
@@ -200,4 +213,88 @@ class OrderServiceTest {
                 assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
                 assertThat(product.getStockQuantity()).isEqualTo(7);
         }
+
+        @Test
+        void shouldFindOrderByIdAndMapResponse() {
+                OrderResponse expected = new OrderResponse(
+                                order.getId(),
+                                order.getStatus(),
+                                List.of(),
+                                order.getTotalAmount(),
+                                order.getCreatedAt());
+
+                when(orderRepository.findById(order.getId()))
+                                .thenReturn(Optional.of(order));
+                doReturn(expected).when(orderMapper).toResponse(order);
+
+                OrderResponse actual = orderService.findById(order.getId());
+
+                assertThat(actual).isSameAs(expected);
+
+                verify(orderRepository).findById(order.getId());
+                verify(orderMapper).toResponse(order); // TooManyActualInvocations
+        }
+
+        @Test
+        void shouldThrowWhenFindingNonexistentOrder() {
+                UUID orderId = UUID.randomUUID();
+
+                when(orderRepository.findById(orderId))
+                                .thenReturn(Optional.empty());
+
+                assertThatThrownBy(() -> orderService.findById(orderId))
+                                .isInstanceOf(OrderNotFoundException.class);
+
+                verify(orderRepository).findById(orderId);
+                verify(orderMapper, never()).toResponse(
+                                org.mockito.ArgumentMatchers.any(Order.class));
+        }
+
+        @Test
+        void shouldListOrdersAndMapEachResult() {
+                Order secondOrder = new Order();
+                secondOrder.setId(UUID.randomUUID());
+                secondOrder.setStatus(OrderStatus.PENDING);
+                secondOrder.setTotalAmount(new BigDecimal("50.00"));
+                secondOrder.setCreatedAt(Instant.now());
+                secondOrder.setUpdatedAt(Instant.now());
+                secondOrder.setItems(new ArrayList<>());
+
+                Pageable pageable = PageRequest.of(0, 5);
+                Page<Order> orderPage = new PageImpl<>(
+                                List.of(order, secondOrder),
+                                pageable,
+                                2);
+
+                OrderResponse firstResponse = new OrderResponse(
+                                order.getId(),
+                                order.getStatus(),
+                                List.of(),
+                                order.getTotalAmount(),
+                                order.getCreatedAt());
+
+                OrderResponse secondResponse = new OrderResponse(
+                                secondOrder.getId(),
+                                secondOrder.getStatus(),
+                                List.of(),
+                                secondOrder.getTotalAmount(),
+                                secondOrder.getCreatedAt());
+
+                when(orderRepository.findAll(pageable)).thenReturn(orderPage);
+                doReturn(firstResponse).when(orderMapper).toResponse(order);
+                doReturn(secondResponse).when(orderMapper).toResponse(secondOrder);
+
+                Page<OrderResponse> result = orderService.listOrders(pageable);
+
+                assertThat(result.getContent())
+                                .containsExactly(firstResponse, secondResponse);
+                assertThat(result.getNumber()).isZero();
+                assertThat(result.getSize()).isEqualTo(5);
+                assertThat(result.getTotalElements()).isEqualTo(2);
+
+                verify(orderRepository).findAll(pageable);
+                verify(orderMapper, times(2))
+                                .toResponse(org.mockito.ArgumentMatchers.any(Order.class)); // TooManyActualInvocations
+        }
+
 }

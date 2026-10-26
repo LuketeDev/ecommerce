@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.lukete.ecommerce.domain.Category;
@@ -181,4 +183,51 @@ class OrderServiceIntegrationTest extends PostgresIntegrationTest {
         product.setStockQuantity(stock);
         return productRepository.saveAndFlush(product);
     }
+
+    @Test
+    void shouldRetrieveOrderWithItemsAndHistoricalPrices() {
+        OrderResponse createdOrder = orderService.createOrder(
+                new CreateOrderRequest(List.of(
+                        new CreateOrderItemRequest(keyboard.getId(), 2))));
+
+        // Simula uma alteração de preço depois da compra.
+        keyboard.setPrice(new BigDecimal("250.00"));
+        productRepository.saveAndFlush(keyboard);
+
+        OrderResponse response = orderService.findById(createdOrder.id());
+
+        assertThat(response.id()).isEqualTo(createdOrder.id());
+        assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
+        assertThat(response.totalAmount()).isEqualByComparingTo("399.80");
+        assertThat(response.items()).hasSize(1);
+
+        var item = response.items().get(0);
+
+        assertThat(item.productId()).isEqualTo(keyboard.getId());
+        assertThat(item.productName()).isEqualTo("Teclado");
+        assertThat(item.quantity()).isEqualTo(2);
+        assertThat(item.unitPrice()).isEqualByComparingTo("199.90");
+        assertThat(item.subtotal()).isEqualByComparingTo("399.80");
+    }
+
+    @Test
+    void shouldListOrdersWithPaginationFromDatabase() {
+        orderService.createOrder(new CreateOrderRequest(List.of(
+                new CreateOrderItemRequest(keyboard.getId(), 1))));
+
+        orderService.createOrder(new CreateOrderRequest(List.of(
+                new CreateOrderItemRequest(mouse.getId(), 1))));
+
+        Page<OrderResponse> page = orderService.listOrders(
+                PageRequest.of(0, 1));
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getNumber()).isZero();
+        assertThat(page.getSize()).isEqualTo(1);
+        assertThat(page.getTotalElements()).isEqualTo(2);
+        assertThat(page.getTotalPages()).isEqualTo(2);
+
+        assertThat(page.getContent().get(0).items()).hasSize(1);
+    }
+
 }

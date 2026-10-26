@@ -172,6 +172,9 @@ class OrderCancellationIntegrationTest {
 
         // O segundo produto será restaurado por último e causará overflow.
         secondProduct.setStockQuantity(Integer.MAX_VALUE);
+        int firstStockBeforeCancellation = firstProduct.getStockQuantity();
+
+        int secondStockBeforeCancellation = secondProduct.getStockQuantity();
         productRepository.saveAndFlush(secondProduct);
 
         assertThatThrownBy(() -> orderService.cancelOrder(orderId))
@@ -188,10 +191,14 @@ class OrderCancellationIntegrationTest {
         Order persistedOrder = orderRepository.findById(orderId)
                 .orElseThrow();
 
-        assertThat(persistedFirst.getStockQuantity()).isEqualTo(10);
+        assertThat(persistedFirst.getStockQuantity())
+                .isEqualTo(firstStockBeforeCancellation);
+
         assertThat(persistedSecond.getStockQuantity())
-                .isEqualTo(Integer.MAX_VALUE);
-        assertThat(persistedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+                .isEqualTo(secondStockBeforeCancellation);
+
+        assertThat(persistedOrder.getStatus())
+                .isEqualTo(OrderStatus.PENDING);
     }
 
     private Product createProduct(String name, int stock) {

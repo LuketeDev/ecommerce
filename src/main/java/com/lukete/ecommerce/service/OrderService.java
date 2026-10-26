@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +28,7 @@ import com.lukete.ecommerce.exception.InsufficientProductStockException;
 import com.lukete.ecommerce.exception.InvalidOrderStatusException;
 import com.lukete.ecommerce.exception.OrderNotFoundException;
 import com.lukete.ecommerce.exception.ProductNotFoundException;
+import com.lukete.ecommerce.mapper.OrderMapper;
 import com.lukete.ecommerce.repository.OrderRepository;
 import com.lukete.ecommerce.repository.ProductRepository;
 
@@ -34,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Service
 public class OrderService {
+    private final OrderMapper orderMapper;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
 
@@ -103,7 +107,7 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        return createResponse(savedOrder);
+        return orderMapper.toResponse(savedOrder);
     }
 
     @Transactional
@@ -117,7 +121,7 @@ public class OrderService {
 
         order.setStatus(OrderStatus.CONFIRMED);
 
-        return createResponse(order);
+        return orderMapper.toResponse(order);
     }
 
     @Transactional
@@ -159,7 +163,20 @@ public class OrderService {
 
         order.setStatus(OrderStatus.CANCELLED);
 
-        return createResponse(order);
+        return orderMapper.toResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> listOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable)
+                .map(orderMapper::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderResponse findById(UUID orderId) {
+        Order result = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
+        return orderMapper.toResponse(result);
     }
 
     private OrderResponse createResponse(Order order) {
